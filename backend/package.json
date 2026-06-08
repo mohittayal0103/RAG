@@ -13,8 +13,8 @@
     "test:chroma": "node src/testChroma.js",
     "test:retrieval": "node src/testRetrieval.js",
     "test:rag": "node src/testRag.js",
-    "start:api": "node src/api/server.js",
-    "dev:api": "nodemon src/api/server.js",
+    "start:api": "node --max-old-space-size=512 src/api/server.js",
+    "dev:api": "NODE_OPTIONS=--max-old-space-size=512 nodemon src/api/server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

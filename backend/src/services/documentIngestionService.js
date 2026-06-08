@@ -135,28 +135,33 @@ async function extractText(filePath, fileName) {
  * }} opts
  * @returns {Promise<{ chunksCreated: number, vectorsStored: number }>}
  */
+const EMBED_BATCH_SIZE = 25;
+
 async function _embedAndStore({ documentId, fileName, content, tag, signal }) {
   // Chunk
   const rawChunks = chunkDocument({ fileName, content });
   logger.info(`${tag} produced ${rawChunks.length} chunk(s)`);
 
-  // Attach documentId so Chroma metadata carries it alongside source/chunkIndex
-  const chunks = rawChunks.map((c) => ({ ...c, documentId }));
-
   if (signal?.aborted) throw Object.assign(new Error('Upload cancelled by client'), { code: 'ABORTED' });
 
-  // Embed
-  logger.info(`${tag} generating embeddings (this may take a moment on free tier)...`);
-  const embedded = await generateEmbeddings(chunks, signal);
-  logger.info(`${tag} embedded ${embedded.length} / ${chunks.length} chunk(s)`);
+  // Embed + store in batches so we never hold the full document in memory.
+  let totalStored = 0;
+  for (let start = 0; start < rawChunks.length; start += EMBED_BATCH_SIZE) {
+    const batch = rawChunks.slice(start, start + EMBED_BATCH_SIZE).map((c) => ({ ...c, documentId }));
+    const batchEnd = Math.min(start + EMBED_BATCH_SIZE, rawChunks.length);
+    logger.info(`${tag} embedding batch ${start + 1}–${batchEnd} / ${rawChunks.length}`);
 
-  if (signal?.aborted) throw Object.assign(new Error('Upload cancelled by client'), { code: 'ABORTED' });
+    const embedded = await generateEmbeddings(batch, signal);
 
-  // Store
-  const { stored } = await storeEmbeddings(embedded);
-  logger.info(`${tag} stored ${stored} vector(s) in ChromaDB`);
+    if (signal?.aborted) throw Object.assign(new Error('Upload cancelled by client'), { code: 'ABORTED' });
 
-  return { chunksCreated: rawChunks.length, vectorsStored: stored };
+    const { stored } = await storeEmbeddings(embedded);
+    totalStored += stored;
+    logger.info(`${tag} stored ${stored} vector(s) (batch ${start + 1}–${batchEnd})`);
+  }
+
+  logger.info(`${tag} total stored: ${totalStored} vector(s) in ChromaDB`);
+  return { chunksCreated: rawChunks.length, vectorsStored: totalStored };
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -310,34 +315,38 @@ async function reindexDocument({ fileName, requestId }) {
   }
   logger.info(`${tag} extracted ${content.length} chars`);
 
-  // ── 4. Generate embeddings ───────────────────────────────────────────────
-  // Chunk first so we know the new IDs before touching Chroma.
-  // Old vectors are still untouched at this point.
+  // ── 4. Chunk + embed + store in batches ─────────────────────────────────
+  // Chunking first gives us the full ID set for orphan cleanup, but we
+  // embed and store in batches to avoid holding all vectors in memory.
   const rawChunks = chunkDocument({ fileName, content });
-  const chunks    = rawChunks.map((c) => ({ ...c, documentId }));
-  const newIdSet  = new Set(chunks.map((c) => c.id));
+  const newIdSet  = new Set(rawChunks.map((c) => c.id));
+  logger.info(`${tag} produced ${rawChunks.length} chunk(s) — embedding in batches of ${EMBED_BATCH_SIZE}`);
 
-  logger.info(`${tag} generating embeddings (this may take a moment on free tier)...`);
-  const embedded = await generateEmbeddings(chunks);
+  let totalStored = 0;
+  for (let start = 0; start < rawChunks.length; start += EMBED_BATCH_SIZE) {
+    const batch = rawChunks.slice(start, start + EMBED_BATCH_SIZE).map((c) => ({ ...c, documentId }));
+    const batchEnd = Math.min(start + EMBED_BATCH_SIZE, rawChunks.length);
+    logger.info(`${tag} embedding batch ${start + 1}–${batchEnd} / ${rawChunks.length}`);
 
-  // ── 5. Verify embeddings created ────────────────────────────────────────
-  if (embedded.length === 0) {
-    throw new Error(
-      `No embeddings generated for "${fileName}" — aborting reindex to preserve existing vectors`
-    );
+    const embedded = await generateEmbeddings(batch);
+
+    if (embedded.length === 0 && start === 0) {
+      throw new Error(
+        `No embeddings generated for "${fileName}" — aborting reindex to preserve existing vectors`
+      );
+    }
+
+    const { stored } = await storeEmbeddings(embedded);
+    totalStored += stored;
   }
-  logger.info(`${tag} embedded ${embedded.length} / ${chunks.length} chunk(s)`);
 
-  // ── 6. Store new vectors (upsert — same-ID old chunks are overwritten) ───
-  const { stored } = await storeEmbeddings(embedded);
-
-  // ── 7. Verify store success ──────────────────────────────────────────────
-  if (stored === 0) {
+  // ── 5. Verify store success ──────────────────────────────────────────────
+  if (totalStored === 0) {
     throw new Error(
       `storeEmbeddings reported 0 stored for "${fileName}" — aborting reindex`
     );
   }
-  logger.info(`${tag} stored ${stored} new vector(s)`);
+  logger.info(`${tag} stored ${totalStored} new vector(s)`);
 
   // ── 8. Delete orphaned old vectors ──────────────────────────────────────
   // Chunk IDs are ${fileName}::chunk::${index}.  If the re-chunked document
@@ -357,12 +366,12 @@ async function reindexDocument({ fileName, requestId }) {
 
   // ── 9. Update metadata (atomic write) ───────────────────────────────────
   const updated = records.map((r) =>
-    r.fileName === fileName ? { ...r, chunks: stored } : r
+    r.fileName === fileName ? { ...r, chunks: totalStored } : r
   );
   writeMetadata(updated);
-  logger.info(`${tag} metadata updated — new chunk count: ${stored}`);
+  logger.info(`${tag} metadata updated — new chunk count: ${totalStored}`);
 
-  return { success: true, chunksCreated: rawChunks.length, vectorsStored: stored };
+  return { success: true, chunksCreated: rawChunks.length, vectorsStored: totalStored };
 }
 
 /**
