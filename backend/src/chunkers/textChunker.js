@@ -125,8 +125,11 @@ function splitIntoChildren(parentText, maxChars, overlapChars) {
     const child = parentText.slice(start, end).trim();
     if (child) children.push(child);
     if (end === parentText.length) break;
-    start = end - overlapChars;
-    if (start <= 0 || step <= 0) { start = end + 1; }
+    // Guarantee forward progress: next start must be strictly greater than current start.
+    // Without this, a word boundary that falls within the overlap window (e.g. the last
+    // space before `start + maxChars` is at `start + overlapChars`) produces
+    // `end - overlapChars === start`, causing an infinite loop.
+    start = Math.max(end - overlapChars, start + 1);
   }
 
   return children;
