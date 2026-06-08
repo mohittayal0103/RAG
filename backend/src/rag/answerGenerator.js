@@ -1,37 +1,22 @@
 /**
  * answerGenerator.js
  *
- * Retrieves relevant chunks, builds a grounded prompt, and returns a
- * Gemini-generated answer together with provenance metadata.
+ * Retrieves relevant chunks, builds a grounded prompt, and returns an
+ * LLM-generated answer together with provenance metadata.
  *
- * Changes in this revision:
- *  - Fix 5: If searchSimilarChunks() returns [] (either empty collection or
- *    every chunk dropped by the similarity threshold), Gemini is NOT called.
- *    We return NOT_FOUND immediately.  This avoids wasting a Gemini API call
- *    on a question the indexed documents cannot answer.
+ * The LLM provider and model are passed in at call time, defaulting to
+ * Gemini 2.5 Flash.  All provider dispatch is handled by llmService.js.
  */
 
-require('dotenv').config();
-const { GoogleGenAI } = require('@google/genai');
-const { searchSimilarChunks } = require('../retrieval/retriever');
-const logger = require('../utils/logger');
+const { searchSimilarChunks }              = require('../retrieval/retriever');
+const { generate }                         = require('../llm/llmService');
+const { DEFAULT_PROVIDER, DEFAULT_MODEL }  = require('../llm/llmConfig');
+const logger                               = require('../utils/logger');
 
-if (!process.env.GEMINI_API_KEY) {
-  throw new Error('GEMINI_API_KEY is not set in environment / .env file');
-}
-
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
-const MODEL     = 'gemini-2.5-flash';
 const NOT_FOUND = 'I could not find that information in the documents.';
 
 /**
- * Builds the grounded prompt sent to Gemini.
- *
- * When conversation history is provided it is prepended so the model can
- * resolve pronouns and follow-up references ("it", "that document", etc.).
- * Answers must still be grounded in the retrieved context — history alone
- * is not a source of fact.
+ * Builds the grounded prompt.
  *
  * @param {string} question
  * @param {Array<{source:string, chunkIndex:number, text:string}>} chunks
@@ -63,66 +48,53 @@ ANSWER:`;
 }
 
 /**
- * Retrieves relevant chunks, builds a grounded prompt, and returns a
- * Gemini-generated answer together with provenance metadata.
- *
- * Accepts an optional `history` array (up to 20 prior turns) so the model
- * can resolve references from earlier in the conversation.  History is
- * included in the prompt for context only — answers must still be grounded
- * in the retrieved document context.
- *
- * Short-circuits WITHOUT calling Gemini when retrieval returns no chunks
- * that meet the similarity threshold.
+ * Retrieves relevant chunks, builds a grounded prompt, and returns an
+ * LLM-generated answer together with provenance metadata.
  *
  * @param {{
  *   question: string,
- *   history?: Array<{ role: 'user'|'assistant', content: string }>
+ *   history?:  Array<{ role: 'user'|'assistant', content: string }>,
+ *   provider?: string,
+ *   model?:    string,
  * }} opts
  * @returns {Promise<{
  *   answer:     string,
  *   sources:    Array<{ source: string, chunkIndex: number }>,
- *   chunksUsed: number
+ *   chunksUsed: number,
+ *   provider:   string,
+ *   model:      string,
  * }>}
  */
-async function answerQuestion({ question, history = [] }) {
+async function answerQuestion({ question, history = [], provider = DEFAULT_PROVIDER, model = DEFAULT_MODEL }) {
   if (!question || question.trim().length === 0) {
     throw new Error('answerQuestion: question must be a non-empty string');
   }
 
-  logger.info(`Answering: "${question}"`);
+  logger.info(`Answering: "${question}" [${provider}/${model}]`);
 
-  // ── 1. Retrieve top-K chunks (already filtered by similarity threshold) ──
+  // ── 1. Retrieve top-K chunks ──────────────────────────────────────────────
   logger.info('  Retrieving relevant chunks...');
   const chunks = await searchSimilarChunks(question);
 
   if (chunks.length === 0) {
-    logger.warn('  No qualifying chunks retrieved — skipping Gemini call, returning NOT_FOUND');
-    return { answer: NOT_FOUND, sources: [], chunksUsed: 0 };
+    logger.warn('  No qualifying chunks retrieved — skipping LLM call, returning NOT_FOUND');
+    return { answer: NOT_FOUND, sources: [], chunksUsed: 0, provider, model };
   }
 
   logger.info(`  Retrieved ${chunks.length} chunk(s) — top score: ${chunks[0].similarityScore}`);
 
-  // ── 2. Build prompt ──────────────────────────────────────────────────────
+  // ── 2. Build prompt ───────────────────────────────────────────────────────
   const prompt = buildPrompt(question, chunks, history);
 
-  // ── 3. Call Gemini 2.5 Flash ─────────────────────────────────────────────
-  logger.info(`  Calling ${MODEL}...`);
-  const response = await ai.models.generateContent({
-    model:    MODEL,
-    contents: prompt,
-  });
+  // ── 3. Call LLM ───────────────────────────────────────────────────────────
+  const answer = (await generate(prompt, provider, model)) || NOT_FOUND;
 
-  const answer = response.text?.trim() ?? NOT_FOUND;
-
-  // ── 4. Build sources list ────────────────────────────────────────────────
-  const sources = chunks.map((c) => ({
-    source:     c.source,
-    chunkIndex: c.chunkIndex,
-  }));
+  // ── 4. Build sources list ─────────────────────────────────────────────────
+  const sources = chunks.map((c) => ({ source: c.source, chunkIndex: c.chunkIndex }));
 
   logger.info('  Answer generated successfully');
 
-  return { answer, sources, chunksUsed: chunks.length };
+  return { answer, sources, chunksUsed: chunks.length, provider, model };
 }
 
 module.exports = { answerQuestion };

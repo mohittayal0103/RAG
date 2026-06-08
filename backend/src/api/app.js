@@ -22,6 +22,7 @@ const healthRoutes   = require('./routes/healthRoutes');
 const chatRoutes     = require('./routes/chatRoutes');
 const documentRoutes = require('./routes/documentRoutes');
 const sessionRoutes  = require('./routes/sessionRoutes');
+const llmRoutes      = require('./routes/llmRoutes');
 
 const app = express();
 
@@ -117,6 +118,7 @@ app.use('/health',    healthRoutes);
 app.use('/chat',      chatRoutes);
 app.use('/documents', documentRoutes);
 app.use('/sessions',  sessionRoutes);
+app.use('/llm',       llmRoutes);
 
 // ── 6. 404 handler ──────────────────────────────────────────────────────────
 /**

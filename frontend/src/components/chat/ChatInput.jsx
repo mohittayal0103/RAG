@@ -2,8 +2,12 @@ import { useState, useRef } from 'react';
 import { Box, IconButton, TextField, Tooltip, useTheme } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import StopIcon from '@mui/icons-material/Stop';
+import ModelSelector from './ModelSelector';
 
-export default function ChatInput({ onSend, loading, disabled }) {
+export default function ChatInput({
+  onSend, loading, disabled,
+  providers, loadingLLM, selectedProvider, selectedModel, onSelectModel,
+}) {
   const [value, setValue] = useState('');
   const inputRef = useRef(null);
   const theme = useTheme();
@@ -35,6 +39,19 @@ export default function ChatInput({ onSend, loading, disabled }) {
         backdropFilter: 'blur(20px)',
       }}
     >
+      {/* Model selector row */}
+      <Box sx={{ maxWidth: 860, mx: 'auto', mb: 0.75, display: 'flex', alignItems: 'center' }}>
+        <ModelSelector
+          providers={providers || []}
+          loadingLLM={loadingLLM}
+          selectedProvider={selectedProvider}
+          selectedModel={selectedModel}
+          onSelect={onSelectModel}
+          disabled={disabled}
+        />
+      </Box>
+
+      {/* Input row */}
       <Box
         sx={{
           display: 'flex',

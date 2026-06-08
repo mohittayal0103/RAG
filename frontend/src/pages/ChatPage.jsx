@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { Box, useMediaQuery, useTheme, Collapse } from '@mui/material';
 import { useSessions } from '../hooks/useSessions';
 import { useChat } from '../hooks/useChat';
+import { useLLM } from '../hooks/useLLM';
 import SessionSidebar from '../components/sessions/SessionSidebar';
 import ChatWindow from '../components/chat/ChatWindow';
 import ChatInput from '../components/chat/ChatInput';
@@ -15,7 +16,8 @@ export default function ChatPage() {
   const [activeSessionId, setActiveSessionId] = useState(null);
   const [creating, setCreating] = useState(false);
 
-  const { messages, loading: chatLoading, error, send, clearError } = useChat(activeSessionId);
+  const { providers, loadingLLM, selectedProvider, selectedModel, selectModel } = useLLM();
+  const { messages, loading: chatLoading, error, send, clearError } = useChat(activeSessionId, selectedProvider, selectedModel);
 
   const handleNewSession = useCallback(async () => {
     setCreating(true);
@@ -45,7 +47,6 @@ export default function ChatPage() {
 
   return (
     <Box sx={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
-      {/* Session sidebar — hide on xs screens */}
       {!isSmall && (
         <SessionSidebar
           sessions={sessions}
@@ -58,7 +59,6 @@ export default function ChatPage() {
         />
       )}
 
-      {/* Chat area */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <Collapse in={!!error}>
           <Box sx={{ px: 3, pt: 2 }}>
@@ -76,6 +76,11 @@ export default function ChatPage() {
           onSend={handleSend}
           loading={chatLoading}
           disabled={!activeSessionId}
+          providers={providers}
+          loadingLLM={loadingLLM}
+          selectedProvider={selectedProvider}
+          selectedModel={selectedModel}
+          onSelectModel={selectModel}
         />
       </Box>
     </Box>

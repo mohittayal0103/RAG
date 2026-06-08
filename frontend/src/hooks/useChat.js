@@ -2,7 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 import { sendMessage } from '../api/chatApi';
 import { getSessionMessages } from '../api/sessionApi';
 
-export function useChat(sessionId) {
+export function useChat(sessionId, provider, model) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -12,7 +12,6 @@ export function useChat(sessionId) {
     if (!sessionId) return;
     try {
       const data = await getSessionMessages(sessionId);
-      // Pair up messages: user always before assistant within each exchange
       const paired = [];
       const users = data.filter((m) => m.role === 'user');
       const assts = data.filter((m) => m.role === 'assistant');
@@ -41,13 +40,15 @@ export function useChat(sessionId) {
     setMessages((prev) => [...prev, userMsg]);
 
     try {
-      const data = await sendMessage(sessionId, question);
+      const data = await sendMessage(sessionId, question, provider, model);
       const assistantMsg = {
         id: Date.now() + 1,
         role: 'assistant',
         content: data.answer,
         sources: data.sources || [],
         chunksUsed: data.chunksUsed || 0,
+        provider: data.provider,
+        model: data.model,
       };
       setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
@@ -56,7 +57,7 @@ export function useChat(sessionId) {
     } finally {
       setLoading(false);
     }
-  }, [sessionId, loading]);
+  }, [sessionId, loading, provider, model]);
 
   return { messages, loading, error, send, clearError: () => setError(null) };
 }

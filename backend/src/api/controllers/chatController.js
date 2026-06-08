@@ -3,18 +3,20 @@
  *
  * Handles POST /chat.
  *
- * Request body: { sessionId: string, question: string }
+ * Request body: { sessionId, question, provider?, model? }
  *
  * Pipeline:
  *  1. Validate sessionId + question
- *  2. Verify session exists in SQLite
- *  3. Load last 20 messages as conversation history
- *  4. Call answerQuestion({ question, history })
- *  5. Persist user question + assistant answer to messages table
- *  6. Set session title to first question (truncated to 100 chars) if unset
+ *  2. Validate provider/model if supplied (falls back to defaults)
+ *  3. Verify session exists in SQLite
+ *  4. Load last 20 messages as conversation history
+ *  5. Call answerQuestion({ question, history, provider, model })
+ *  6. Persist user question + assistant answer to messages table
+ *  7. Set session title to first question (truncated to 100 chars) if unset
  */
 
 const { answerQuestion }   = require('../../rag/answerGenerator');
+const { validateProviderModel, DEFAULT_PROVIDER, DEFAULT_MODEL } = require('../../llm/llmConfig');
 const {
   getSession,
   getSessionMessages,
@@ -26,16 +28,12 @@ const logger               = require('../../utils/logger');
 
 /**
  * POST /chat
- *
- * @param {import('express').Request}      req
- * @param {import('express').Response}     res
- * @param {import('express').NextFunction} next
  */
 async function chat(req, res, next) {
-  const id               = req.requestId;
-  const { sessionId, question } = req.body;
+  const id = req.requestId;
+  const { sessionId, question, provider, model } = req.body;
 
-  // ── Input validation ────────────────────────────────────────────────────
+  // ── Input validation ───────────────────────────────────────────────────────
   if (!sessionId) {
     return res.status(400).json({ success: false, error: 'sessionId is required', requestId: id });
   }
@@ -59,31 +57,43 @@ async function chat(req, res, next) {
     return res.status(400).json({ success: false, error: `question must not exceed ${MAX_QUESTION_LENGTH} characters`, requestId: id });
   }
 
-  // ── Session lookup ───────────────────────────────────────────────────────
+  // ── Provider / model validation (optional fields) ─────────────────────────
+  const chosenProvider = provider || DEFAULT_PROVIDER;
+  const chosenModel    = model    || DEFAULT_MODEL;
+
+  if (provider || model) {
+    const { valid, reason } = validateProviderModel(chosenProvider, chosenModel);
+    if (!valid) {
+      return res.status(400).json({ success: false, error: reason, requestId: id });
+    }
+  }
+
+  // ── Session lookup ─────────────────────────────────────────────────────────
   const session = getSession(sessionId);
   if (!session) {
     return res.status(404).json({ success: false, error: `Session not found: "${sessionId}"`, requestId: id });
   }
 
-  // ── Load conversation history ────────────────────────────────────────────
+  // ── Load conversation history ──────────────────────────────────────────────
   const history = getSessionMessages(sessionId, 20).map((m) => ({
     role:    m.role,
     content: m.content,
   }));
 
-  // ── RAG pipeline ─────────────────────────────────────────────────────────
+  // ── RAG pipeline ───────────────────────────────────────────────────────────
   try {
     const trimmedQuestion = question.trim();
-    logger.info(`[${id}] POST /chat — session: ${sessionId}, question: "${trimmedQuestion}"`);
+    logger.info(`[${id}] POST /chat — session: ${sessionId}, provider: ${chosenProvider}/${chosenModel}, question: "${trimmedQuestion}"`);
 
     const { answer, sources, chunksUsed } = await answerQuestion({
       question: trimmedQuestion,
       history,
+      provider: chosenProvider,
+      model:    chosenModel,
     });
 
     logger.info(`[${id}] POST /chat — answer generated, chunksUsed: ${chunksUsed}`);
 
-    // ── Persist exchange atomically ────────────────────────────────────────
     saveExchange({
       sessionId,
       question: trimmedQuestion,
@@ -91,7 +101,14 @@ async function chat(req, res, next) {
       title: session.title ? null : trimmedQuestion.slice(0, 100),
     });
 
-    return res.json({ success: true, answer, sources, chunksUsed });
+    return res.json({
+      success: true,
+      answer,
+      sources,
+      chunksUsed,
+      provider: chosenProvider,
+      model:    chosenModel,
+    });
   } catch (err) {
     next(err);
   }
