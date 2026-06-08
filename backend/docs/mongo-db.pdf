@@ -1,0 +1,245 @@
+MONGODB GUIDE
+
+MongoDB Overview
+
+MongoDB is a NoSQL document database that stores data in BSON format.
+
+Database
+  └── Collection
+          └── Document
+
+Example Document:
+
+{
+  "_id": "123",
+  "name": "John Doe",
+  "email": "john@example.com"
+}
+
+--------------------------------------------------
+CRUD OPERATIONS
+--------------------------------------------------
+
+Insert One:
+
+db.users.insertOne({
+  name: "Mohit",
+  age: 26
+});
+
+Find All:
+
+db.users.find();
+
+Find One:
+
+db.users.findOne({
+  email: "test@gmail.com"
+});
+
+Update:
+
+db.users.updateOne(
+  { _id: userId },
+  {
+    $set: {
+      name: "Updated Name"
+    }
+  }
+);
+
+Delete:
+
+db.users.deleteOne({
+  _id: userId
+});
+
+--------------------------------------------------
+QUERY OPERATORS
+--------------------------------------------------
+
+Greater Than:
+
+{
+  age: {
+    $gt: 18
+  }
+}
+
+Less Than:
+
+{
+  age: {
+    $lt: 60
+  }
+}
+
+Range Query:
+
+{
+  age: {
+    $gte: 18,
+    $lte: 60
+  }
+}
+
+Not Equal:
+
+{
+  status: {
+    $ne: "inactive"
+  }
+}
+
+--------------------------------------------------
+LOGICAL OPERATORS
+--------------------------------------------------
+
+AND:
+
+{
+  $and: [
+    { active: true },
+    { age: { $gt: 18 } }
+  ]
+}
+
+OR:
+
+{
+  $or: [
+    { role: "admin" },
+    { role: "manager" }
+  ]
+}
+
+--------------------------------------------------
+AGGREGATION PIPELINE
+--------------------------------------------------
+
+Match:
+
+{
+  $match: {
+    status: "ACTIVE"
+  }
+}
+
+Group:
+
+{
+  $group: {
+    _id: "$department",
+    count: {
+      $sum: 1
+    }
+  }
+}
+
+Sort:
+
+{
+  $sort: {
+    createdAt: -1
+  }
+}
+
+Project:
+
+{
+  $project: {
+    name: 1,
+    email: 1
+  }
+}
+
+Example:
+
+db.users.aggregate([
+  {
+    $match: {
+      active: true
+    }
+  },
+  {
+    $group: {
+      _id: "$department",
+      total: {
+        $sum: 1
+      }
+    }
+  }
+]);
+
+--------------------------------------------------
+INDEXING
+--------------------------------------------------
+
+Create Index:
+
+db.users.createIndex({
+  email: 1
+});
+
+Compound Index:
+
+db.users.createIndex({
+  email: 1,
+  status: 1
+});
+
+Benefits:
+- Faster searching
+- Faster sorting
+- Better query performance
+
+--------------------------------------------------
+MONGOOSE
+--------------------------------------------------
+
+Schema:
+
+const UserSchema = new Schema({
+  name: String,
+  email: String,
+  active: Boolean
+});
+
+Model:
+
+const User = mongoose.model(
+  "User",
+  UserSchema
+);
+
+Find:
+
+const users = await User.find();
+
+Create:
+
+await User.create({
+  name: "Mohit"
+});
+
+--------------------------------------------------
+BACKUP AND RESTORE
+--------------------------------------------------
+
+Backup:
+
+mongodump --db hrms
+
+Restore:
+
+mongorestore --db hrms dump/hrms
+
+--------------------------------------------------
+PERFORMANCE TIPS
+--------------------------------------------------
+
+- Create indexes for frequently queried fields.
+- Use projections to limit returned fields.
+- Implement pagination.
+- Avoid unnecessary aggregation stages.
+- Monitor slow queries.

@@ -1,0 +1,41 @@
+{
+  "name": "project1",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "chroma": "chroma run --path ./chroma-data --port 8000",
+    "chroma:windows": "C:\\Users\\mohit\\AppData\\Local\\Python\\bin\\chroma.exe run --path ./chroma-data --host localhost --port 8000",
+    "test:chunker": "node src/testChunker.js",
+    "test:embeddings": "node src/testEmbeddings.js",
+    "test:chroma": "node src/testChroma.js",
+    "test:retrieval": "node src/testRetrieval.js",
+    "test:rag": "node src/testRag.js",
+    "start:api": "node src/api/server.js",
+    "dev:api": "nodemon src/api/server.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@google/genai": "^2.8.0",
+    "better-sqlite3": "^12.10.0",
+    "chromadb": "^3.4.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.5.2",
+    "langchain": "^1.4.4",
+    "multer": "^2.1.1",
+    "ollama": "^0.6.3",
+    "pdf-parse": "^2.4.5",
+    "uuid": "^14.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
